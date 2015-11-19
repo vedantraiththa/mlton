@@ -27,6 +27,8 @@ datatype Context = Context of {
     labelToStringIndex: Label.t -> string,
     chunkLabelToString: ChunkLabel.t -> string,
     chunkLabelIndex: ChunkLabel.t -> int,
+    debugLocations: string list ref,
+    registerLocationForDebug: string -> int,
     labelChunk: Label.t -> ChunkLabel.t,
     entryLabels: Label.t vector,
     labelInfo: Label.t -> {block: Block.t,
@@ -107,7 +109,8 @@ val globalDeclarations =
 \@nextFun = external hidden global %uintptr_t\n\
 \@returnToC = external hidden global i32\n\
 \@nextChunks = external hidden global [0 x void (%struct.cont*)*]\n\
-\@gcState = external hidden global %struct.GC_state\n"
+\@gcState = external hidden global %struct.GC_state\n\
+\@dbgState = external hidden global i32\n"
 
 fun implementsPrim (p: 'a Prim.t): bool =
    let
@@ -971,7 +974,36 @@ fun outputStatement (cxt: Context, stmt: Statement.t): string =
                 end
               | Statement.Noop => "\t; Noop\n"
               | Statement.PrimApp p => outputPrimApp (cxt, p)
-              | Statement.ProfileLabel _ => "\t; ProfileLabel\n"
+              | Statement.ProfileLabel l =>
+		let
+		    val Context { program , registerLocationForDebug, ... } = cxt
+		    val Program.T { profileInfo, ... } = program
+		    val ProfileInfo.T { labels, names, sourceSeqs, sources, ... } = case profileInfo of
+												 NONE => ProfileInfo.empty
+											       | SOME pi => pi
+		    val labelsIndex = Vector.index ( labels, fn ({ label, ... }) => (ProfileLabel.toString l = ProfileLabel.toString label) )
+		    val { sourceSeqsIndex, ... } = Vector.sub ( labels, Option.valOf labelsIndex )
+		    val sourceIndex = Vector.sub( sourceSeqs, sourceSeqsIndex )
+		    val name = Vector.fold ( sourceIndex, "", fn (idx, str) =>
+								 let
+								     val { nameIndex, ... } = Vector.sub( sources, idx )
+								 in
+								     concat [str, Vector.sub( names, nameIndex )]
+								 end)
+		    val dbgInstr = if String.contains( name, #":" )
+				   then
+				       let
+(* Use sep here instead of \t *)
+					   val labelSplit = String.split( name, #"\t" )
+					   val sourceInfo = Option.valOf( List.peek ( labelSplit, fn str => String.contains( str, #":" ) ) )
+					   val dbgVar = registerLocationForDebug( sourceInfo )
+				       in
+					   concat [ "\t", "store i32 1, i32* @dbgState , !dbg !", Int.toString dbgVar, "\n" ]
+				       end
+				   else ""
+		in
+		    concat [ "\t; ProfileLabel ", name, "\n", dbgInstr ]
+		end
     in
         concat [comment, printcode, stmtcode]
     end
@@ -1328,6 +1360,23 @@ fun outputLLVMDeclarations (cxt, print, chunk) =
                        labelStrings, "\n"])
     end
 
+fun outputDebugInfo ( cxt, print ) =
+    let
+	val () = print("\n\n\n")
+	val Context { debugLocations, ... } = cxt
+	val () = List.foreachi( !debugLocations, fn (idx, loc) =>
+						   let
+						       val sourceInfo = String.split( loc, #":" )
+						       val fileName = List.first( sourceInfo)
+(*						       val scope = getScopeOfLocation(fileName)*)
+						       val lineNo = List.last( sourceInfo )
+						   in
+						       print ( concat [ "!", Int.toString idx, " = !MDLocation(line: ", lineNo, ", column: 1, scope:); ", fileName, "\n" ] )
+						   end )
+    in
+	()
+    end
+
 fun outputChunk (cxt, outputLL, chunk) =
     let
         val () = cFunctions := []
@@ -1416,6 +1465,7 @@ fun outputChunk (cxt, outputLL, chunk) =
                         print (concat ["@", name, " = external ", visibility, " global ", ty,
                                        "\n"])
                     end)
+	val () = outputDebugInfo ( cxt, print )
 
     in
         done ()
@@ -1485,11 +1535,29 @@ fun makeContext program =
          * (Int.toString o valOf o #frameIndex o labelInfo) l
          *)
         fun labelToStringIndex (l: Label.t): string = llint (labelIndex l)
+
+	val debugLocations = ref [];
+	fun registerLocationForDebug (sourceInfo: string): int =
+	    let
+		val idx = List.index( !debugLocations, fn loc => (loc = sourceInfo) )
+	    in
+		case idx of
+		    NONE =>
+		    let
+			val _ = List.push( debugLocations, sourceInfo )
+		    in
+			List.length( !debugLocations ) - 1
+		    end
+		  | SOME i => i
+	    end
     in
         Context { program = program,
                   labelToStringIndex = labelToStringIndex,
                   chunkLabelIndex = chunkLabelIndex,
                   chunkLabelToString = chunkLabelToString,
+		  debugLocations = debugLocations,
+		  registerLocationForDebug = registerLocationForDebug,
+		  (* printDbgMetaData = fn output => ... *)
                   labelChunk = labelChunk,
                   entryLabels = entryLabels,
                   labelInfo = labelInfo,
