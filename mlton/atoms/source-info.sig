@@ -19,6 +19,7 @@ signature SOURCE_INFO =
       val all: unit -> t list
       val equals: t * t -> bool
       val file: t -> File.t option
+      val pos: t -> SourcePos.t option
       val gc: t
       val gcArrayAllocate: t
       val hash: t -> word

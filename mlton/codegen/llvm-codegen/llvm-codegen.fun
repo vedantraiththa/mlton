@@ -27,8 +27,7 @@ datatype Context = Context of {
     labelToStringIndex: Label.t -> string,
     chunkLabelToString: ChunkLabel.t -> string,
     chunkLabelIndex: ChunkLabel.t -> int,
-    debugLocations: string list ref,
-    registerLocationForDebug: string -> int,
+    registerLocationForDebug: SourceInfo.t -> int,
     labelChunk: Label.t -> ChunkLabel.t,
     entryLabels: Label.t vector,
     labelInfo: Label.t -> {block: Block.t,
@@ -39,6 +38,184 @@ datatype Context = Context of {
     printstmt: bool,
     printmove: bool
 }
+
+structure LldbMetadata = 
+    struct
+	 local
+	     val debugDecls : string list ref = ref []
+(*TODO: Optimize the value part of this list *)
+	     val debugMetadata : {key: int, value: string} list ref = ref []
+	 in
+	     fun addDecl ( decl ) =
+		 List.push( debugDecls, decl )
+
+	     fun printDecls( print ) =
+		 let
+		     val () = print("\n\n\n")
+		     val () = List.foreach( !debugDecls, fn (decl) => print ( concat [ decl, "\n" ] ) )
+		 in
+		     ()
+		 end
+
+	     fun register(metadata: string) = 
+		 let
+		     val idx = List.index( !debugMetadata, fn {value, ...} => String.equals(value, metadata) )
+		 in
+		     case idx of
+			 NONE =>
+			 let
+			     val key = List.length( !debugMetadata )
+			     val _ = List.push( debugMetadata, {key=key, value=metadata} )
+			 in
+			     key
+			 end
+		       | SOME i =>
+			 let
+			     val {key, ...} = List.nth( !debugMetadata, i )
+			 in
+			     key
+			 end
+		 end
+
+	     fun printAllMetadata( print ) = 
+		 let
+		     val () = print("\n\n\n")
+		     (* Reverse list so they are printed in order *)
+		     val () = List.foreach( List.rev ( !debugMetadata ), fn ({key, value}) => print ( concat [ "!", Int.toString key, " = ", value, "\n" ] ) )
+		 in
+		     ()
+		 end
+	 end
+
+        datatype 'a nodeOrRef = Node of 'a | Ref of int
+
+	(* Datatypes for Tags *)
+        datatype Empty = Empty (* Empty Array *)
+	     and File = File of { filename: string, filepath: string }
+	     and Flag = Flag of { behaviour: int, key: string, value: int }
+	     and FileType = FileType of { file: File nodeOrRef }
+	     and SubRoutineType = SubRoutineType of { types: Empty nodeOrRef }
+	     and SubProgram = SubProgram of { file: File nodeOrRef, fileType: FileType nodeOrRef, subRoutineType: SubRoutineType nodeOrRef, variables: Empty nodeOrRef }
+	     and Location = Location of { line: int, scope: SubProgram nodeOrRef }
+	     and CompileUnit = CompileUnit of { file: File nodeOrRef, 
+						enums: Empty nodeOrRef, 
+						retainedTypes: Empty nodeOrRef, 
+						subprograms: SubProgram list nodeOrRef, 
+						globals: Empty nodeOrRef, 
+						imports: Empty nodeOrRef }
+	(* Create datatypes *)
+	fun createEmpty() = Empty
+	fun createFile(filename, filepath) = File { filename = filename, filepath = filepath }
+	fun createFlag(behaviour, key, value) = Flag { behaviour = behaviour, key = key, value = value }
+	fun createFileType(fileOrRef) = FileType { file = fileOrRef }
+	fun createSubRoutineType(typesOrRef) = SubRoutineType { types = typesOrRef }
+	fun createSubProgram(fileOrRef, fileTypeOrRef, subRoutineTypeOrRef, variablesOrRef) = 
+	    SubProgram { file = fileOrRef, fileType = fileTypeOrRef, subRoutineType = subRoutineTypeOrRef, variables = variablesOrRef }
+	fun createLocation(line, scopeOrRef) = Location { line = line, scope = scopeOrRef }
+	fun createCompileUnit(fileOrRef, enumsOrRef, retainedTypesOrRef, subprogramsOrRef, globalsOrRef, importsOrRef) =
+	    CompileUnit { file = fileOrRef, enums = enumsOrRef, retainedTypes = retainedTypesOrRef, subprograms = subprogramsOrRef, globals = globalsOrRef, imports = importsOrRef } 
+
+	(* toString Implementations for Datatypes*)
+	fun nodeOrRefToString(t : 'a nodeOrRef, f : 'a -> string) =
+	    case t of
+		Ref i => concat["!", Int.toString i]
+	      | Node n => f n
+
+	fun emptyToString(_ : Empty) = "!{}"
+	fun fileToString(File {filename, filepath} : File) = concat["!{!\"", filename, "\", !\"", filepath, "\"}"]
+	fun flagToString(Flag {behaviour, key, value} : Flag) = concat["!{i32 ", Int.toString behaviour, ", !\"", key, "\", i32 ", Int.toString value, "}"]
+	fun fileTypeToString(FileType {file} : FileType) = concat["!{!\"0x29\", ", nodeOrRefToString(file, fileToString), "} ; [ DW_TAG_file_type ]"]
+	fun subRoutineTypeToString(SubRoutineType {types} : SubRoutineType) = 
+	    concat["!{!\"0x15\", null, null, null, ", nodeOrRefToString(types, emptyToString), ", null, null, null} ; [ DW_TAG_subroutine_type ]"] 
+	fun subProgramToString(SubProgram {file, fileType, subRoutineType, variables} : SubProgram) = 
+	    let
+		val fileString = nodeOrRefToString(file, fileToString)
+		val fileTypeString = nodeOrRefToString(fileType, fileTypeToString)
+		val srtString = nodeOrRefToString(subRoutineType, subRoutineTypeToString)
+		val variablesString = nodeOrRefToString(variables, emptyToString)
+	    in
+		concat[
+		    "!{!\"0x2e\", ", 
+		    fileString, 
+		    ", ", 
+		    fileTypeString, 
+		    ", ", 
+		    srtString, 
+		    ", null, %struct.cont ()* @Chunk0, null, null, ", 
+		    variablesString, 
+		    "} ; [ DW_TAG_subprogram ]" 
+		]
+	    end
+	fun locationToString(Location {line, scope} : Location) = concat["!MDLocation(line: ", Int.toString line, ", scope: ", nodeOrRefToString(scope, subProgramToString),")"]
+	fun compileUnitToString(CompileUnit {file, enums, retainedTypes, subprograms, globals, imports} : CompileUnit) =
+	    let
+		val fileString = nodeOrRefToString(file, fileToString)
+		val enumString = nodeOrRefToString(enums, emptyToString)
+		val retainedTypesString = nodeOrRefToString(retainedTypes, emptyToString)
+(*TODO: figure out a way to print vectors in LLDB format*)
+		val subprogramsString = nodeOrRefToString(subprograms, fn sps => List.foldi( sps, "This should not occur", fn (i, sp, out) => concat[out]  ))
+		val globalsString = nodeOrRefToString(globals, emptyToString)
+		val importsString = nodeOrRefToString(imports, emptyToString)
+	    in
+		concat[
+		    "!{!\"0x11\", ", 
+		    fileString, 
+		    ", ", 
+		    enumString, 
+		    ", ", 
+		    retainedTypesString, 
+		    ", ", 
+		    subprogramsString, 
+		    ", ", 
+		    globalsString, 
+		    ", ", 
+		    importsString, 
+		    "} ; [ DW_TAG_compile_unit ]" 
+		]
+	    end
+
+	(* Create presets *)
+	fun presetFileType(filename, filepath) =
+	    let 
+		val file = register(fileToString( createFile(filename, filepath) ))
+	    in
+		createFileType(Ref file)
+	    end
+
+	fun presetSubRoutineType() =
+	    let
+		val empty = register(emptyToString( createEmpty() ))
+	    in
+		createSubRoutineType(Ref empty)
+	    end
+
+	fun presetSubProgram(filename, filepath) =
+	    let
+		val file = register(fileToString( createFile(filename, filepath) ))
+		val fileType = register(fileTypeToString( presetFileType(filename, filepath) ))
+		val subRoutineType = register(subRoutineTypeToString( presetSubRoutineType() ))
+		val empty = register(emptyToString( createEmpty() ))
+	    in
+		createSubProgram(Ref file, Ref fileType, Ref subRoutineType, Ref empty)
+	    end
+
+	fun presetLocation(line, filename, filepath) =
+	    let
+		val subprogram = register(subProgramToString( presetSubProgram(filename, filepath) ))
+	    in
+		createLocation(line, Ref subprogram)
+	    end
+
+	fun presetCompileUnit(filename, filepath) =
+	    let
+		val file = register(fileToString( createFile(filename, filepath) ))
+		val subprogram = register(subProgramToString( presetSubProgram(filename, filepath) ))
+		val subprograms = register(concat["!{!", Int.toString subprogram, "}"])
+		val empty = register(emptyToString( createEmpty() ))
+	    in
+		createCompileUnit(Ref file, Ref empty, Ref empty, Ref subprograms, Ref empty, Ref empty)
+	    end
+    end
 
 fun ctypes () =
     concat ["%uintptr_t = type i", Bits.toString (Control.Target.Size.cpointer ()), "\n"]
@@ -978,31 +1155,25 @@ fun outputStatement (cxt: Context, stmt: Statement.t): string =
 		let
 		    val Context { program , registerLocationForDebug, ... } = cxt
 		    val Program.T { profileInfo, ... } = program
-		    val ProfileInfo.T { labels, names, sourceSeqs, sources, ... } = case profileInfo of
+		    val ProfileInfo.T { labels, sourceInfos, sourceSeqs, sources, ... } = case profileInfo of
 												 NONE => ProfileInfo.empty
 											       | SOME pi => pi
 		    val labelsIndex = Vector.index ( labels, fn ({ label, ... }) => (ProfileLabel.toString l = ProfileLabel.toString label) )
 		    val { sourceSeqsIndex, ... } = Vector.sub ( labels, Option.valOf labelsIndex )
 		    val sourceIndex = Vector.sub( sourceSeqs, sourceSeqsIndex )
-		    val name = Vector.fold ( sourceIndex, "", fn (idx, str) =>
-								 let
-								     val { nameIndex, ... } = Vector.sub( sources, idx )
-								 in
-								     concat [str, Vector.sub( names, nameIndex )]
-								 end)
-		    val dbgInstr = if String.contains( name, #":" )
-				   then
-				       let
-(* Use sep here instead of \t *)
-					   val labelSplit = String.split( name, #"\t" )
-					   val sourceInfo = Option.valOf( List.peek ( labelSplit, fn str => String.contains( str, #":" ) ) )
-					   val dbgVar = registerLocationForDebug( sourceInfo )
-				       in
-					   concat [ "\t", "store i32 1, i32* @dbgState , !dbg !", Int.toString dbgVar, "\n" ]
-				       end
-				   else ""
+		    val sources' = Vector.map( sourceIndex, fn (sIdx) => Vector.sub( sources, sIdx ) ) (* Ideally this should be one element, why is this a vector? *)
+		    val sourceInfos' = Vector.map( sources', fn ({ sourceInfoIndex, ... }) => Vector.sub( sourceInfos ,sourceInfoIndex ) )
+		    val dbgInstr = Vector.fold ( sourceInfos', "", fn (si, instr) =>
+								      case SourceInfo.pos si of
+									  NONE => ""
+									| SOME _ => 
+									  let
+									      val dbgVar = registerLocationForDebug( si )
+									  in
+									      concat [ instr, "\t", "store i32 1, i32* @dbgState , !dbg !", Int.toString dbgVar, "\n" ]
+									  end)
 		in
-		    concat [ "\t; ProfileLabel ", name, "\n", dbgInstr ]
+		    concat [ "\t; ProfileLabel ", Vector.toString SourceInfo.toString sourceInfos', "\n", dbgInstr ]
 		end
     in
         concat [comment, printcode, stmtcode]
@@ -1360,25 +1531,25 @@ fun outputLLVMDeclarations (cxt, print, chunk) =
                        labelStrings, "\n"])
     end
 
-fun outputDebugInfo ( cxt, print ) =
+fun generateLldbMetadata() =
     let
-	val () = print("\n\n\n")
-	val Context { debugLocations, ... } = cxt
-	val () = List.foreachi( !debugLocations, fn (idx, loc) =>
-						   let
-						       val sourceInfo = String.split( loc, #":" )
-						       val fileName = List.first( sourceInfo)
-(*						       val scope = getScopeOfLocation(fileName)*)
-						       val lineNo = List.last( sourceInfo )
-						   in
-						       print ( concat [ "!", Int.toString idx, " = !MDLocation(line: ", lineNo, ", column: 1, scope:); ", fileName, "\n" ] )
-						   end )
+(*TODO: fix this*)
+	val cu = LldbMetadata.register( LldbMetadata.compileUnitToString( LldbMetadata.presetCompileUnit("simple_fact.sml", "/Users/vedant/Desktop/lectures/project-mtf/my_examples/simple_fact_current") ) )
+	val cuDecl = concat["!llvm.dbg.cu = !{!", Int.toString cu, "}"]
+	val () = LldbMetadata.addDecl( cuDecl )
+
+	val flag1 = LldbMetadata.register( LldbMetadata.flagToString( LldbMetadata.createFlag(2, "Dwarf Version", 2) ) )
+	val flag2 = LldbMetadata.register( LldbMetadata.flagToString( LldbMetadata.createFlag(2, "Debug Info Version", 2) ) )
+	val flag3 = LldbMetadata.register( LldbMetadata.flagToString( LldbMetadata.createFlag(2, "PIC Level", 2) ) )
+	val flagDecl = concat["!llvm.module.flags = !{!", Int.toString flag1, ", !", Int.toString flag2, ", !", Int.toString flag3, "}"]
+	val () = LldbMetadata.addDecl( flagDecl )
     in
 	()
     end
 
 fun outputChunk (cxt, outputLL, chunk) =
     let
+	val () = generateLldbMetadata()
         val () = cFunctions := []
         val () = ffiSymbols := []
         val Context { labelToStringIndex, chunkLabelIndex, labelChunk,
@@ -1465,7 +1636,8 @@ fun outputChunk (cxt, outputLL, chunk) =
                         print (concat ["@", name, " = external ", visibility, " global ", ty,
                                        "\n"])
                     end)
-	val () = outputDebugInfo ( cxt, print )
+	val () = LldbMetadata.printDecls( print )
+	val () = LldbMetadata.printAllMetadata( print )
 
     in
         done ()
@@ -1536,28 +1708,21 @@ fun makeContext program =
          *)
         fun labelToStringIndex (l: Label.t): string = llint (labelIndex l)
 
-	val debugLocations = ref [];
-	fun registerLocationForDebug (sourceInfo: string): int =
+	fun registerLocationForDebug (si: SourceInfo.t): int =
 	    let
-		val idx = List.index( !debugLocations, fn loc => (loc = sourceInfo) )
+		val pos = valOf( SourceInfo.pos si )
+		val file = SourcePos.file pos
+(* TODO: Change this *)
+		val location = LldbMetadata.presetLocation(SourcePos.line pos, File.toString file, "/Users/vedant/Desktop/lectures/project-mtf/my_examples/simple_fact_current")
 	    in
-		case idx of
-		    NONE =>
-		    let
-			val _ = List.push( debugLocations, sourceInfo )
-		    in
-			List.length( !debugLocations ) - 1
-		    end
-		  | SOME i => i
+		LldbMetadata.register( LldbMetadata.locationToString( location ) )
 	    end
     in
         Context { program = program,
                   labelToStringIndex = labelToStringIndex,
                   chunkLabelIndex = chunkLabelIndex,
                   chunkLabelToString = chunkLabelToString,
-		  debugLocations = debugLocations,
 		  registerLocationForDebug = registerLocationForDebug,
-		  (* printDbgMetaData = fn output => ... *)
                   labelChunk = labelChunk,
                   entryLabels = entryLabels,
                   labelInfo = labelInfo,

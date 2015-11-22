@@ -30,10 +30,12 @@ structure Pos =
             NONE => Unknown
           | SOME p => Known p
 
-      fun file p =
+      fun pos p =
          case p of
-            Known p => SOME (SourcePos.file p)
+            Known p => SOME p
           | Unknown => NONE
+
+      fun file p = Option.map (pos p, SourcePos.file)
    end
 
 datatype info =
@@ -112,6 +114,12 @@ val equals: t * t -> bool =
 
 val equals =
    Trace.trace2 ("SourceInfo.equals", layout, layout, Bool.layout) equals
+
+fun pos (s: t): SourcePos.t option =
+   case info s of
+      Anonymous pos => Pos.pos pos
+    | C _ => NONE
+    | Function {pos, ...} => Pos.pos pos
 
 fun file (s: t): File.t option =
    case info s of

@@ -11,6 +11,7 @@ signature IMPLEMENT_PROFILING_STRUCTS =
       structure Machine: MACHINE
       structure Rssa: RSSA
       sharing Machine.ProfileLabel = Rssa.ProfileLabel
+      sharing Machine.SourceInfo = Rssa.SourceInfo
    end
 
 signature IMPLEMENT_PROFILING = 

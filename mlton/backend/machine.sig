@@ -236,12 +236,12 @@ signature MACHINE =
                      frameSources: int vector,
                      labels: {label: ProfileLabel.t,
                               sourceSeqsIndex: int} vector,
-                     names: string vector,
+                     sourceInfos: SourceInfo.t vector,
                      (* Each sourceSeq describes a sequence of source functions,
                       * each given as an index into the source vector.
                       *)
                      sourceSeqs: int vector vector,
-                     sources: {nameIndex: int,
+                     sources: {sourceInfoIndex: int,
                                successorsIndex: int} vector}
 
             val empty: t

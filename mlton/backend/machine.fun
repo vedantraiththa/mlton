@@ -677,21 +677,21 @@ structure ProfileInfo =
          T of {frameSources: int vector,
                labels: {label: ProfileLabel.t,
                         sourceSeqsIndex: int} vector,
-               names: string vector,
+               sourceInfos: Atoms.SourceInfo.t vector,
                sourceSeqs: int vector vector,
-               sources: {nameIndex: int,
+               sources: {sourceInfoIndex: int,
                          successorsIndex: int} vector}
 
       val empty = T {frameSources = Vector.new0 (),
                      labels = Vector.new0 (),
-                     names = Vector.new0 (),
+                     sourceInfos = Vector.new0 (),
                      sourceSeqs = Vector.new0 (),
                      sources = Vector.new0 ()}
 
       fun clear (T {labels, ...}) =
          Vector.foreach (labels, ProfileLabel.clear o #label)
 
-      fun layout (T {frameSources, labels, names, sourceSeqs, sources}) =
+      fun layout (T {frameSources, labels, sourceInfos, sourceSeqs, sources}) =
          Layout.record
          [("frameSources", Vector.layout Int.layout frameSources),
           ("labels",
@@ -701,20 +701,20 @@ structure ProfileInfo =
                            ("sourceSeqsIndex",
                             Int.layout sourceSeqsIndex)])
            labels),
-          ("names", Vector.layout String.layout names),
+          ("sourceInfos", Vector.layout (fn si => String.layout (SourceInfo.toString'(si, " "))) sourceInfos),
           ("sourceSeqs", Vector.layout (Vector.layout Int.layout) sourceSeqs),
           ("sources",
-           Vector.layout (fn {nameIndex, successorsIndex} =>
-                          Layout.record [("nameIndex", Int.layout nameIndex),
+           Vector.layout (fn {sourceInfoIndex, successorsIndex} =>
+                          Layout.record [("sourceInfoIndex", Int.layout sourceInfoIndex),
                                          ("successorsIndex",
                                           Int.layout successorsIndex)])
            sources)]
 
       fun layouts (pi, output) = output (layout pi)
 
-      fun isOK (T {frameSources, labels, names, sourceSeqs, sources}): bool =
+      fun isOK (T {frameSources, labels, sourceInfos, sourceSeqs, sources}): bool =
          let
-            val namesLength = Vector.length names
+            val sourceInfosLength = Vector.length sourceInfos
             val sourceSeqsLength = Vector.length sourceSeqs
             val sourcesLength = Vector.length sources
          in
@@ -730,14 +730,14 @@ structure ProfileInfo =
                        Vector.forall
                        (v, fn i => 0 <= i andalso i < sourcesLength)))
              andalso (Vector.forall
-                      (sources, fn {nameIndex, successorsIndex} =>
-                       0 <= nameIndex
-                       andalso nameIndex < namesLength
+                      (sources, fn {sourceInfoIndex, successorsIndex} =>
+                       0 <= sourceInfoIndex
+                       andalso sourceInfoIndex < sourceInfosLength
                        andalso 0 <= successorsIndex
-                       andalso successorsIndex < sourceSeqsLength)))
+                       andalso sourceInfoIndex < sourceSeqsLength)))
          end
 
-       fun modify (T {frameSources, labels, names, sourceSeqs, sources})
+       fun modify (T {frameSources, labels, sourceInfos, sourceSeqs, sources})
           : {newProfileLabel: ProfileLabel.t -> ProfileLabel.t,
              delProfileLabel: ProfileLabel.t -> unit,
              getProfileInfo: unit -> t} =
@@ -771,7 +771,7 @@ structure ProfileInfo =
                    val pi = T {frameSources = frameSources,
                                labels = Vector.concat
                                         [labels, Vector.fromList (!new)],
-                               names = names,
+                               sourceInfos = sourceInfos,
                                sourceSeqs = sourceSeqs,
                                sources = sources}
                 in

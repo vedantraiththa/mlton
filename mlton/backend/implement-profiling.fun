@@ -57,7 +57,7 @@ type sourceSeq = int list
 structure InfoNode =
    struct
       datatype t = T of {info: SourceInfo.t,
-                         nameIndex: int,
+                         sourceInfoIndex: int,
                          sourcesIndex: int,
                          successors: t list ref}
 
@@ -152,26 +152,26 @@ fun doit program =
          needProfileLabels orelse (profile = ProfileTimeField)
       val frameProfileIndices: (Label.t * int) list ref = ref []
       val infoNodes: InfoNode.t list ref = ref []
-      val nameCounter = Counter.new 0
-      val names: string list ref = ref []
+      val sourceInfoCounter = Counter.new 0
+      val sourceInfos: SourceInfo.t list ref = ref []
       local
          val sourceCounter = Counter.new 0
-         val sep =
+(*         val sep =
             if profile = ProfileCallStack
                then " "
-            else "\t"
-         val {get = nameIndex, ...} =
+            else "\t"*)
+         val {get = sourceInfoIndex, ...} =
             Property.get (SourceInfo.plist,
                           Property.initFun
                           (fn si =>
-                           (List.push (names, SourceInfo.toString' (si, sep))
-                            ; Counter.next nameCounter)))
+                           (List.push (sourceInfos, si)
+                            ; Counter.next sourceInfoCounter)))
       in         
          fun sourceInfoNode (si: SourceInfo.t) =
             let
                val infoNode =
                   InfoNode.T {info = si,
-                              nameIndex = nameIndex si,
+                              sourceInfoIndex = sourceInfoIndex si,
                               sourcesIndex = Counter.next sourceCounter,
                               successors = ref []}
                val _ = List.push (infoNodes, infoNode)
@@ -904,12 +904,12 @@ fun doit program =
                                main = doFunction main,
                                objectTypes = objectTypes}
       val _ = addFuncEdges ()
-      val names = Vector.fromListRev (!names)
+      val sourceInfos = Vector.fromListRev (!sourceInfos)
       val sources =
          Vector.map
          (Vector.fromListRev (!infoNodes),
-          fn InfoNode.T {nameIndex, successors, ...} =>
-          {nameIndex = nameIndex, 
+          fn InfoNode.T {sourceInfoIndex, successors, ...} =>
+          {sourceInfoIndex = sourceInfoIndex, 
            successorsIndex = (sourceSeqIndex
                               (List.revMap (!successors,
                                             InfoNode.sourcesIndex)))})
@@ -931,7 +931,7 @@ fun doit program =
             SOME (Machine.ProfileInfo.T
                   {frameSources = frameSources,
                    labels = Vector.fromList (!labels),
-                   names = names,
+                   sourceInfos = sourceInfos,
                    sourceSeqs = sourceSeqs,
                    sources = sources})
          end

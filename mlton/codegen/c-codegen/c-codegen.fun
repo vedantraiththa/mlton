@@ -241,8 +241,8 @@ fun outputIncludes (includes, print) =
                                        print ">\n"))
     ; print "\n")
 
-fun declareProfileLabel (l, print) =
-   C.call ("DeclareProfileLabel", [ProfileLabel.toString l], print)
+fun declareProfileLabel (l, print) = ()
+   (*C.call ("DeclareProfileLabel", [ProfileLabel.toString l], print)*)
 
 fun declareGlobals (prefix: string, print) =
    let
@@ -250,6 +250,7 @@ fun declareGlobals (prefix: string, print) =
        * it.
        *)
       val _ = print (concat [prefix, "struct GC_state gcState;\n"])
+      val _ = print (concat [prefix, "Int32 dbgState;\n"])
       val _ =
          List.foreach
          (CType.all, fn t =>
@@ -453,7 +454,7 @@ fun outputDeclarations
          else ()
       fun declareProfileInfo () =
          let
-            fun doit (ProfileInfo.T {frameSources, labels, names, sourceSeqs,
+            fun doit (ProfileInfo.T {frameSources, labels, sourceInfos, sourceSeqs,
                                      sources}) =
                (Vector.foreach (labels, fn {label, ...} =>
                                 declareProfileLabel (label, print))
@@ -469,15 +470,16 @@ fun outputDeclarations
                 ; declareArray ("uint32_t*", "sourceSeqs", sourceSeqs, fn (i, _) =>
                                 concat ["sourceSeq", Int.toString i])
                 ; declareArray ("GC_sourceSeqIndex", "frameSources", frameSources, C.int o #2)
-                ; (declareArray
+                (* ; (declareArray
                    ("struct GC_sourceLabel", "sourceLabels", labels,
                     fn (_, {label, sourceSeqsIndex}) =>
-                    concat ["{(pointer)&", ProfileLabel.toString label, ", ",
-                            C.int sourceSeqsIndex, "}"]))
-                ; declareArray ("char*", "sourceNames", names, C.string o #2)
+                   concat ["{(pointer)&", ProfileLabel.toString label, ", ",
+                            C.int sourceSeqsIndex, "}"])) *)
+	        ; (declareArray ("struct GC_sourceLabel", "sourceLabels", Vector.fromList [], fn (_, {label, sourceSeqsIndex}) => "" ))
+                ; declareArray ("char*", "sourceNames", Vector.map(sourceInfos, (fn si => SourceInfo.toString'(si, " "))), C.string o #2)
                 ; declareArray ("struct GC_source", "sources", sources,
-                                fn (_, {nameIndex, successorsIndex}) =>
-                                concat ["{ ", Int.toString nameIndex, ", ",
+                                fn (_, {sourceInfoIndex, successorsIndex}) =>
+                                concat ["{ ", Int.toString sourceInfoIndex, ", ",
                                         Int.toString successorsIndex, " }"]))
          in
             case profileInfo of
