@@ -26,6 +26,7 @@ signature ATOMS' =
       structure IntSize: INT_SIZE
       structure Label: LABEL
       structure Prim: PRIM
+      structure ProfileDebug: PROFILE_DEBUG
       structure ProfileExp: PROFILE_EXP
       structure ProfileLabel: PROFILE_LABEL
       structure RealSize: REAL_SIZE
@@ -87,6 +88,7 @@ signature ATOMS =
       sharing IntSize = Atoms.IntSize
       sharing Label = Atoms.Label
       sharing Prim = Atoms.Prim
+      sharing ProfileDebug = Atoms.ProfileDebug
       sharing ProfileExp = Atoms.ProfileExp
       sharing ProfileLabel = Atoms.ProfileLabel
       sharing RealSize = Atoms.RealSize

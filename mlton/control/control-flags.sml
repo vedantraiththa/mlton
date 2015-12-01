@@ -943,6 +943,7 @@ structure Profile =
        | ProfileCallStack
        | ProfileCount
        | ProfileDrop
+       | ProfileDebug
        | ProfileLabel
        | ProfileTimeField
        | ProfileTimeLabel
@@ -953,6 +954,7 @@ structure Profile =
           | ProfileCallStack => "CallStack"
           | ProfileCount => "Count"
           | ProfileDrop => "Drop"
+	  | ProfileDebug => "Debug"
           | ProfileLabel => "Label"
           | ProfileTimeField => "TimeField"
           | ProfileTimeLabel => "TimeLabel"

@@ -241,8 +241,8 @@ fun outputIncludes (includes, print) =
                                        print ">\n"))
     ; print "\n")
 
-fun declareProfileLabel (l, print) = ()
-   (*C.call ("DeclareProfileLabel", [ProfileLabel.toString l], print)*)
+fun declareProfileLabel (l, print) =
+   C.call ("DeclareProfileLabel", [ProfileLabel.toString l], print)
 
 fun declareGlobals (prefix: string, print) =
    let
@@ -426,6 +426,7 @@ fun outputDeclarations
                 | Control.ProfileCallStack => "PROFILE_NONE"
                 | Control.ProfileCount => "PROFILE_COUNT"
                 | Control.ProfileDrop => "PROFILE_NONE"
+                | Control.ProfileDebug => "PROFILE_NONE"
                 | Control.ProfileLabel => "PROFILE_NONE"
                 | Control.ProfileTimeField => "PROFILE_TIME_FIELD"
                 | Control.ProfileTimeLabel => "PROFILE_TIME_LABEL"
@@ -470,12 +471,12 @@ fun outputDeclarations
                 ; declareArray ("uint32_t*", "sourceSeqs", sourceSeqs, fn (i, _) =>
                                 concat ["sourceSeq", Int.toString i])
                 ; declareArray ("GC_sourceSeqIndex", "frameSources", frameSources, C.int o #2)
-                (* ; (declareArray
-                   ("struct GC_sourceLabel", "sourceLabels", labels,
+                ; (declareArray
+                   ("struct GC_sourceLabel", "sourceLabels",
+		    if !Control.profile = Control.ProfileDebug then Vector.fromList [] else labels,
                     fn (_, {label, sourceSeqsIndex}) =>
                    concat ["{(pointer)&", ProfileLabel.toString label, ", ",
-                            C.int sourceSeqsIndex, "}"])) *)
-	        ; (declareArray ("struct GC_sourceLabel", "sourceLabels", Vector.fromList [], fn (_, {label, sourceSeqsIndex}) => "" ))
+                            C.int sourceSeqsIndex, "}"]))
                 ; declareArray ("char*", "sourceNames", Vector.map(sourceInfos, (fn si => SourceInfo.toString'(si, " "))), C.string o #2)
                 ; declareArray ("struct GC_source", "sources", sources,
                                 fn (_, {sourceInfoIndex, successorsIndex}) =>
