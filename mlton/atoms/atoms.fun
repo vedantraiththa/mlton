@@ -70,6 +70,7 @@ structure Atoms =
                              structure WordSize = WordSize)
 
       structure SourceInfo = SourceInfo ()
+      structure ProfileDebug = ProfileDebug ()
       structure ProfileLabel = ProfileLabel ()
       structure ProfileExp = ProfileExp (structure SourceInfo = SourceInfo)
    end

@@ -43,6 +43,7 @@ val buildConstants: (string * (unit -> string)) list =
                                                 ProfileNone => false
                                               | ProfileCallStack => false
                                               | ProfileDrop => false
+					      | ProfileDebug => false
                                               | ProfileLabel => false
                                               | _ => true))]
    end

@@ -671,6 +671,10 @@ fun makeOptions {usage} =
                             | "call" => ProfileCallStack
                             | "count" => ProfileCount
                             | "drop" => ProfileDrop
+			    | "debug" => (keepGenerated := true
+					 ; keepO := true
+					 ; preferAbsPaths := true
+					 ; ProfileDebug)
                             | "label" => ProfileLabel
                             | "time" => (profileTimeSet := true
                                          ; ProfileTimeLabel)

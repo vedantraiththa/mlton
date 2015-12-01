@@ -55,7 +55,7 @@ structure LldbMetadata =
 					      functionName: string, 
 					      functionType: string,
 					      variables: Empty nodeOrRef }
-	     and LexicalBlock = LexicalBlock of { file: File nodeOrRef, scope: SubProgram nodeOrRef, id: string }
+	     and LexicalBlock = LexicalBlock of { file: File nodeOrRef, scope: SubProgram nodeOrRef, id: int }
 	     and Location = Location of { line: int, scope: SubProgram nodeOrRef }
 	     and CompileUnit = CompileUnit of { file: File nodeOrRef, 
 						enums: Empty nodeOrRef, 
@@ -65,8 +65,9 @@ structure LldbMetadata =
 						imports: Empty nodeOrRef }
 
 	 local
+	     val chunkLabel : string ref = ref ""
 	     val debugDecls : string list ref = ref []
-(* TODO: Optimize the value part for this list *)
+(*vedant TODO: Optimize the value part for this list *)
 	     val debugMetadata : {key: int, value: string, valueType: string, comment: string} list ref = ref []
 	 in
 	     fun addDecl( decl ) =
@@ -130,11 +131,17 @@ structure LldbMetadata =
 
 	     fun clearAll() =
 		 let
-		     val _ = List.removeAll(!debugDecls, fn _ => true)
-		     val _ = List.removeAll(!debugMetadata, fn _ => true)
+		     val _ = List.foreach(!debugDecls, fn _ => let val _ = List.pop debugDecls in () end)
+		     val _ = List.foreach(!debugMetadata, fn _ => let val _ = List.pop debugMetadata in () end)
 		 in
 		     ()
 		 end
+
+	     fun setChunkLabel( label ) =
+		 chunkLabel := label
+
+	     fun getChunkLabel() = 
+		 !chunkLabel
 	 end
 
 	(* Create datatypes *)
@@ -147,10 +154,11 @@ structure LldbMetadata =
 	    SubProgram { file = fileOrRef, 
 			 fileType = fileTypeOrRef,
 			 subRoutineType = subRoutineTypeOrRef, 
-			 functionName = fName, 
+			 functionName = getChunkLabel(), 
 			 functionType = fType, 
 			 variables = variablesOrRef }
-	fun createLexicalBlock(fileOrRef, scopeOrRef, id) = LexicalBlock { file = fileOrRef, scope = scopeOrRef, id = id }
+	fun createLexicalBlock(fileOrRef, scopeOrRef) = 
+		LexicalBlock { file = fileOrRef, scope = scopeOrRef, id = 1 }
 	fun createLocation(line, scopeOrRef) = Location { line = line, scope = scopeOrRef }
 	fun createCompileUnit(fileOrRef, enumsOrRef, retainedTypesOrRef, subprogramsOrRef, globalsOrRef, importsOrRef) =
 	    CompileUnit { file = fileOrRef, 
@@ -180,14 +188,14 @@ structure LldbMetadata =
 		val variablesString = nodeOrRefToString(variables, emptyToString)
 		val function = concat[functionType, " ", functionName]
 	    in
-		concat["!{", concat (List.separate(["!\"0x2e\"", fileString, fileTypeString, srtString, "null", functionName, "null", "null", variablesString], ",")), "}" ]
+		concat["!{", concat (List.separate(["!\"0x2e\"", fileString, fileTypeString, srtString, "null", function, "null", "null", variablesString], ", ")), "}" ]
 	    end
 	fun lexicalBlockToString(LexicalBlock {file, scope, id} : LexicalBlock) = 
 	    let
 		val fileString = nodeOrRefToString(file, fileToString)
 		val scopeString = nodeOrRefToString(scope, subProgramToString)
 	    in
-		concat["!{!\"0xb", id, "\", ", fileString, ", ", scopeString, "}"]
+		concat["!{!\"0xb\\00", Int.toString id, "\", ", fileString, ", ", scopeString, "}"]
 	    end
 	fun locationToString(Location {line, scope} : Location) = concat["!MDLocation(line: ", Int.toString line, ", scope: ", nodeOrRefToString(scope, subProgramToString),")"]
 	fun compileUnitToString(CompileUnit {file, enums, retainedTypes, subprograms, globals, imports} : CompileUnit) =
@@ -195,11 +203,11 @@ structure LldbMetadata =
 		val fileString = nodeOrRefToString(file, fileToString)
 		val enumString = nodeOrRefToString(enums, emptyToString)
 		val retainedTypesString = nodeOrRefToString(retainedTypes, emptyToString)
-		val subprogramsString = nodeOrRefToString(subprograms, fn sps => concat ["!{", concat (List.separate(List.map(sps, subProgramToString), ",")), "}"])
+		val subprogramsString = nodeOrRefToString(subprograms, fn sps => concat ["!{", concat (List.separate(List.map(sps, subProgramToString), ", ")), "}"])
 		val globalsString = nodeOrRefToString(globals, emptyToString)
 		val importsString = nodeOrRefToString(imports, emptyToString)
 	    in
-		concat["!{", concat (List.separate(["!\"0x11\"", fileString, enumString, retainedTypesString, subprogramsString, globalsString, importsString], ",")), "}" ]
+		concat["!{", concat (List.separate(["!\"0x11\"", fileString, enumString, retainedTypesString, subprogramsString, globalsString, importsString], ", ")), "}" ]
 	    end
 
 	(* Create presets *)
@@ -224,7 +232,7 @@ structure LldbMetadata =
 		val subRoutineType = registerMetadata(subRoutineTypeToString( presetSubRoutineType() ), "SubRoutine", "[ DW_TAG_subroutine_type ]" )
 		val empty = registerMetadata(emptyToString( createEmpty() ), "Empty", "Empty Array" )
 	    in
-		createSubProgram(Ref file, Ref fileType, Ref subRoutineType, "@Chunk0", "%struct.cont ()*", Ref empty)
+		createSubProgram(Ref file, Ref fileType, Ref subRoutineType, getChunkLabel(), "%struct.cont ()*", Ref empty)
 	    end
 
 	fun presetLexicalBlock(filename, filepath) =
@@ -234,7 +242,7 @@ structure LldbMetadata =
 				     NONE => registerMetadata(subProgramToString( presetSubProgram(filename, filepath) ), "SubProgram", "[ DW_TAG_subprogram ]" )
 				   | SOME i => i
 	    in
-		createLexicalBlock(Ref file, Ref subprogram, "\\001")
+		createLexicalBlock(Ref file, Ref subprogram)
 	    end	    
 
 	fun presetLocation(line, filename, filepath) =
@@ -247,13 +255,23 @@ structure LldbMetadata =
 	fun presetCompileUnit(filename, filepath) =
 	    let
 		val file = registerMetadata( fileToString( createFile(filename, filepath) ), "File", "" )
-		val subprogram = registerMetadata( subProgramToString( presetSubProgram(filename, filepath) ), "SubProgram", "[ DW_TAG_subprogram ]" )
-		val subprograms = registerMetadata( concat["!{!", Int.toString subprogram, "}"], "SubProgram Array", "[ DW_TAG_subprogram ] Array" )
+		val listOfSubprogram = case peekAllMetadata("SubProgram") of
+					   [] => [(registerMetadata(subProgramToString( presetSubProgram(filename, filepath) ), "SubProgram", "[ DW_TAG_subprogram ]" ))]
+					 | l => l
+		val subprograms = case peekMetadata( "SubProgram Array" ) of
+				      NONE => registerMetadata( concat["!{", 
+								       concat (
+									   List.separate(List.map(listOfSubprogram, fn i => nodeOrRefToString(Ref i, subProgramToString)), ",")
+								       ), 
+								       "}"], 
+								"SubProgram Array", 
+								"[ DW_TAG_subprogram ] Array" )
+				    | SOME i => i
 		val empty = registerMetadata( emptyToString( createEmpty() ), "Empty", "Empty Array" )
 	    in
 		createCompileUnit(Ref file, Ref empty, Ref empty, Ref subprograms, Ref empty, Ref empty)
 	    end
-
+(*vedant TODO *)
 	fun composeCompileUnit() =
 	    let
 		val empty = case peekMetadata("Empty") of 
@@ -263,10 +281,12 @@ structure LldbMetadata =
 		val listOfSubprogram = peekAllMetadata("SubProgram")
 		val subprograms = case peekMetadata( "SubProgram Array" ) of
 				      NONE => registerMetadata( concat["!{", 
-							       concat (List.separate(List.map(listOfSubprogram, fn i => nodeOrRefToString(Ref i, subProgramToString)), ",")), 
-							       "}"], 
-							"SubProgram Array", 
-							"[ DW_TAG_subprogram ] Array" )
+								       concat (
+									   List.separate(List.map(listOfSubprogram, fn i => nodeOrRefToString(Ref i, subProgramToString)), ",")
+								       ), 
+								       "}"], 
+								"SubProgram Array", 
+								"[ DW_TAG_subprogram ] Array" )
 				    | SOME i => i
 
 	    in
@@ -1605,10 +1625,16 @@ fun outputLLVMDeclarations (cxt, print, chunk) =
 
 fun generateLldbMetadata() =
     let
-(*TODO: fix this*)
-	val cu = LldbMetadata.registerMetadata( LldbMetadata.compileUnitToString( LldbMetadata.presetCompileUnit("simple_add.sml", "/Users/vedant/Desktop/lectures/project-mtf/my_examples/simple_add_current") ), "CompileUnit", "[ DW_TAG_compile_unit ]"  )
-	val cuDecl = concat["!llvm.dbg.cu = !{!", Int.toString cu, "}"]
-	val () = LldbMetadata.addDecl( cuDecl )
+	val () = case LldbMetadata.composeCompileUnit( ) of
+		     NONE => ()
+		   | SOME c => 
+		     let
+			 val cu = LldbMetadata.registerMetadata( LldbMetadata.compileUnitToString( c ), "CompileUnit", "[ DW_TAG_compile_unit ]"  )
+			 val cuDecl = concat["!llvm.dbg.cu = !{!", Int.toString cu, "}"]
+			 val () = LldbMetadata.addDecl( cuDecl )
+		     in
+			 ()
+		     end
 
 	val flag1 = LldbMetadata.registerMetadata( LldbMetadata.flagToString( LldbMetadata.createFlag(2, "Dwarf Version", 2) ), "Flag", "" )
 	val flag2 = LldbMetadata.registerMetadata( LldbMetadata.flagToString( LldbMetadata.createFlag(2, "Debug Info Version", 2) ), "Flag", "" )
@@ -1621,6 +1647,7 @@ fun generateLldbMetadata() =
 
 fun outputChunk (cxt, outputLL, chunk) =
     let
+	val () = LldbMetadata.clearAll()
         val () = cFunctions := []
         val () = ffiSymbols := []
         val Context { labelToStringIndex, chunkLabelIndex, labelChunk,
@@ -1631,6 +1658,7 @@ fun outputChunk (cxt, outputLL, chunk) =
         val () = print (concat ["define hidden %struct.cont @",
                                 "Chunk" ^ chunkLabelToString chunkLabel,
                                 "() {\nentry:\n"])
+	val () = LldbMetadata.setChunkLabel( "@Chunk" ^ chunkLabelToString chunkLabel )
         val () = if printblock
                  then print "\tcall i32 (i8*, ...)* @printf(i8* getelementptr inbounds ([16 x i8]* @enteringChunk, i32 0, i32 0))\n"
                  else ()

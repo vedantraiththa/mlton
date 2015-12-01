@@ -147,7 +147,7 @@ fun doit program =
       val profile = !Control.profile
       val profileStack: bool = !Control.profileStack
       val needProfileLabels: bool =
-         profile = ProfileTimeLabel orelse profile = ProfileLabel
+         profile = ProfileTimeLabel orelse profile = ProfileLabel orelse profile = ProfileDebug
       val needCodeCoverage: bool =
          needProfileLabels orelse (profile = ProfileTimeField)
       val frameProfileIndices: (Label.t * int) list ref = ref []

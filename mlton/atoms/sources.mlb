@@ -65,6 +65,8 @@ local
    prim.fun
    source-info.sig
    source-info.fun
+   profile-debug.sig
+   profile-debug.fun
    profile-label.sig
    profile-label.fun
    profile-exp.sig
@@ -95,6 +97,7 @@ in
    signature PRIM
    signature PRIM_CONS
    signature PRIM_TYCONS
+   signature PROFILE_DEBUG
    signature PROFILE_LABEL
    signature REAL_SIZE
    signature RECORD

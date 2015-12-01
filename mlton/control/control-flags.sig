@@ -312,6 +312,7 @@ signature CONTROL_FLAGS =
        | ProfileCallStack
        | ProfileCount
        | ProfileDrop
+       | ProfileDebug
        | ProfileLabel
        | ProfileTimeField
        | ProfileTimeLabel
