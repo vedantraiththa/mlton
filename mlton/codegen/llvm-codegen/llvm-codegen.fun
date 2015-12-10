@@ -67,9 +67,19 @@ structure LldbMetadata =
 	 local
 	     val chunkLabel : string ref = ref ""
 	     val debugDecls : string list ref = ref []
-(*vedant TODO: Optimize the value part for this list *)
 	     val debugMetadata : {key: int, value: string, valueType: string, comment: string} list ref = ref []
+	     val dbgStateCounter = Counter.new 1
 	 in
+
+	     fun dbgStateNext() =
+		 let
+		     val _ = if Counter.value( dbgStateCounter ) = 60
+			     then Counter.reset( dbgStateCounter, 0 )
+			     else ()
+		 in
+		     Counter.next dbgStateCounter
+		 end
+
 	     fun addDecl( decl ) =
 		 List.push( debugDecls, decl )
 
@@ -112,9 +122,6 @@ structure LldbMetadata =
 			     key
 			 end
 		 end
-(* vedant TODO: implement this *)
-	     fun updateMetadata(check: string -> bool, update: {key: int, value: string, valueType: string, comment: string} -> unit) =
-		 ()
 
 	     fun printAllMetadata( print ) = 
 		 let
@@ -367,7 +374,67 @@ val globalDeclarations =
 \@returnToC = external hidden global i32\n\
 \@nextChunks = external hidden global [0 x void (%struct.cont*)*]\n\
 \@gcState = external hidden global %struct.GC_state\n\
-\@dbgState = external hidden global i32\n"
+\@dbgState = external hidden global [256 x i32]\n\
+\@dbgState0 = external hidden global i32\n\
+\@dbgState1 = external hidden global i32\n\
+\@dbgState2 = external hidden global i32\n\
+\@dbgState3 = external hidden global i32\n\
+\@dbgState4 = external hidden global i32\n\
+\@dbgState5 = external hidden global i32\n\
+\@dbgState6 = external hidden global i32\n\
+\@dbgState7 = external hidden global i32\n\
+\@dbgState8 = external hidden global i32\n\
+\@dbgState9 = external hidden global i32\n\
+\@dbgState10 = external hidden global i32\n\
+\@dbgState11 = external hidden global i32\n\
+\@dbgState12 = external hidden global i32\n\
+\@dbgState13 = external hidden global i32\n\
+\@dbgState14 = external hidden global i32\n\
+\@dbgState15 = external hidden global i32\n\
+\@dbgState16 = external hidden global i32\n\
+\@dbgState17 = external hidden global i32\n\
+\@dbgState18 = external hidden global i32\n\
+\@dbgState19 = external hidden global i32\n\
+\@dbgState20 = external hidden global i32\n\
+\@dbgState21 = external hidden global i32\n\
+\@dbgState22 = external hidden global i32\n\
+\@dbgState23 = external hidden global i32\n\
+\@dbgState24 = external hidden global i32\n\
+\@dbgState25 = external hidden global i32\n\
+\@dbgState26 = external hidden global i32\n\
+\@dbgState27 = external hidden global i32\n\
+\@dbgState28 = external hidden global i32\n\
+\@dbgState29 = external hidden global i32\n\
+\@dbgState30 = external hidden global i32\n\
+\@dbgState31 = external hidden global i32\n\
+\@dbgState32 = external hidden global i32\n\
+\@dbgState33 = external hidden global i32\n\
+\@dbgState34 = external hidden global i32\n\
+\@dbgState35 = external hidden global i32\n\
+\@dbgState36 = external hidden global i32\n\
+\@dbgState37 = external hidden global i32\n\
+\@dbgState38 = external hidden global i32\n\
+\@dbgState39 = external hidden global i32\n\
+\@dbgState40 = external hidden global i32\n\
+\@dbgState41 = external hidden global i32\n\
+\@dbgState42 = external hidden global i32\n\
+\@dbgState43 = external hidden global i32\n\
+\@dbgState44 = external hidden global i32\n\
+\@dbgState45 = external hidden global i32\n\
+\@dbgState46 = external hidden global i32\n\
+\@dbgState47 = external hidden global i32\n\
+\@dbgState48 = external hidden global i32\n\
+\@dbgState49 = external hidden global i32\n\
+\@dbgState50 = external hidden global i32\n\
+\@dbgState51 = external hidden global i32\n\
+\@dbgState52 = external hidden global i32\n\
+\@dbgState53 = external hidden global i32\n\
+\@dbgState54 = external hidden global i32\n\
+\@dbgState55 = external hidden global i32\n\
+\@dbgState56 = external hidden global i32\n\
+\@dbgState57 = external hidden global i32\n\
+\@dbgState58 = external hidden global i32\n\
+\@dbgState59 = external hidden global i32\n"
 
 fun implementsPrim (p: 'a Prim.t): bool =
    let
@@ -1243,27 +1310,48 @@ fun outputStatement (cxt: Context, stmt: Statement.t): string =
 		    val sourceIndex = Vector.sub( sourceSeqs, sourceSeqsIndex )
 		    val sources' = Vector.map( sourceIndex, fn (sIdx) => Vector.sub( sources, sIdx ) )
 		    val sourceInfos' = Vector.map( sources', fn ({ sourceInfoIndex, ... }) => Vector.sub( sourceInfos ,sourceInfoIndex ) )
-		    val dbgInstr = Vector.fold ( sourceInfos', "", fn (si, instr) =>
+		    val dbgInstr = Vector.foldi ( sourceInfos', "", fn (i, si, instr) =>
 								      case SourceInfo.pos si of
 									  NONE => ""
 									| SOME _ => 
 									  let
 									      val dbgVar = registerLocationForDebug( si )
+									      val count = LldbMetadata.dbgStateNext()
 									  in
-									      concat [ instr, "\t", "store i32 1, i32* @dbgState , !dbg !", Int.toString dbgVar, "\n" ]
+									      concat 
+										  [ 
+										    instr, 
+										    "\t",
+										    "store i32 1, i32* @dbgState", Int.toString count, " ", 
+										    " , !dbg !", 
+										    Int.toString dbgVar, 
+										    "\n" 
+										  ]
 									  end)
-(*		    val dbgInstr = Vector.fold ( sourceInfos', "", fn (si, instr) =>
+(*		    val dbgInstr = Vector.foldi ( sourceInfos', "", fn (i, si, instr) =>
 								      case SourceInfo.pos si of
 									  NONE => ""
-									| SOME p => 
-									       case String.hasSubstring(SourcePos.toString p, {substring="build"}) of
-										   false => 
-										       let
-											   val dbgVar = registerLocationForDebug( si )
-										       in
-											   concat [ instr, "\t", "store i32 1, i32* @dbgState , !dbg !", Int.toString dbgVar, "\n" ]
-										       end
-										 | true => "")
+									| SOME _ => 
+									  let
+									      val dbgVar = registerLocationForDebug( si )
+									      val dbgStateAddr = nextLLVMReg ()
+									      val count = LldbMetadata.dbgStateNext()
+									  in
+									      concat 
+										  [ 
+										    instr, 
+										    "\t",
+										    dbgStateAddr, 
+										    " = getelementptr inbounds [256 x i32]* @dbgState, i32 0, i32 ", 
+										    Int.toString count, 
+										    "\n",
+										    "\t",
+										    "store i32 1, i32* ", dbgStateAddr, " ", 
+										    " , !dbg !", 
+										    Int.toString dbgVar, 
+										    "\n" 
+										  ]
+									  end)
 *)		in
 		    concat [ "\t; ProfileLabel ", Vector.toString SourceInfo.toString sourceInfos', "\n", dbgInstr ]
 		end
@@ -1623,13 +1711,41 @@ fun outputLLVMDeclarations (cxt, print, chunk) =
                        labelStrings, "\n"])
     end
 
-fun generateLldbMetadata() =
+fun initializeLldbMetadata ( cxt, chunk ) =
     let
-	val () = case LldbMetadata.composeCompileUnit( ) of
+	val Context { program, chunkLabelToString, ... } = cxt
+	val Chunk.T {blocks, chunkLabel, regMax} = chunk
+	val () = LldbMetadata.setChunkLabel( "@Chunk" ^ chunkLabelToString chunkLabel )
+	val Program.T { profileInfo, ... } = program
+	val ProfileInfo.T { labels, sourceInfos, sourceSeqs, sources, ... } = case profileInfo of
+										  NONE => ProfileInfo.empty
+										| SOME pi => pi
+
+	val () = case Vector.peekMap( sourceInfos, fn si => 
+						      case ( SourceInfo.pos si) of
+							  NONE => NONE
+							| SOME pos =>
+							  let
+							      val file = SourcePos.file pos
+							      val filename = File.fileOf file
+							      val base = File.base ( !Control.inputFile )
+							  in
+							      case String.findSubstring( filename, {substring=base} ) of
+								  NONE => NONE
+								| SOME _ => SOME pos
+							  end  ) of
 		     NONE => ()
-		   | SOME c => 
+		   | SOME pos => 
 		     let
-			 val cu = LldbMetadata.registerMetadata( LldbMetadata.compileUnitToString( c ), "CompileUnit", "[ DW_TAG_compile_unit ]"  )
+			 val file = SourcePos.file pos
+			 val filename = File.fileOf file
+			 val filepath = File.dirOf file
+			 val cu = LldbMetadata.registerMetadata
+				      ( 
+					LldbMetadata.compileUnitToString( LldbMetadata.presetCompileUnit( filename, filepath ) ), 
+					"CompileUnit", 
+					"[ DW_TAG_compile_unit ]" 
+				      )
 			 val cuDecl = concat["!llvm.dbg.cu = !{!", Int.toString cu, "}"]
 			 val () = LldbMetadata.addDecl( cuDecl )
 		     in
@@ -1641,6 +1757,24 @@ fun generateLldbMetadata() =
 	val flag3 = LldbMetadata.registerMetadata( LldbMetadata.flagToString( LldbMetadata.createFlag(2, "PIC Level", 2) ), "Flag", "" )
 	val flagDecl = concat["!llvm.module.flags = !{!", Int.toString flag1, ", !", Int.toString flag2, ", !", Int.toString flag3, "}"]
 	val () = LldbMetadata.addDecl( flagDecl )
+
+	val () = Vector.foreach( sourceInfos, fn si =>
+						 case ( SourceInfo.pos si ) of
+						     NONE => ()
+						   | SOME pos =>
+						     let 
+							 val file = SourcePos.file pos
+							 val filename = File.fileOf file
+							 val filepath = File.dirOf file
+							 val _ = LldbMetadata.registerMetadata
+								     (
+								       LldbMetadata.lexicalBlockToString( LldbMetadata.presetLexicalBlock(filename, filepath) ), 
+								       "LexicalBlock", 
+								       "[ DW_TAG_lexical_block ]"
+								     )
+						     in
+							 ()
+						     end )
     in
 	()
     end
@@ -1648,6 +1782,7 @@ fun generateLldbMetadata() =
 fun outputChunk (cxt, outputLL, chunk) =
     let
 	val () = LldbMetadata.clearAll()
+	val () = initializeLldbMetadata( cxt, chunk )
         val () = cFunctions := []
         val () = ffiSymbols := []
         val Context { labelToStringIndex, chunkLabelIndex, labelChunk,
@@ -1657,8 +1792,7 @@ fun outputChunk (cxt, outputLL, chunk) =
         val () = outputLLVMDeclarations (cxt, print, chunk)
         val () = print (concat ["define hidden %struct.cont @",
                                 "Chunk" ^ chunkLabelToString chunkLabel,
-                                "() {\nentry:\n"])
-	val () = LldbMetadata.setChunkLabel( "@Chunk" ^ chunkLabelToString chunkLabel )
+                                "() {\nentry:\n"])	
         val () = if printblock
                  then print "\tcall i32 (i8*, ...)* @printf(i8* getelementptr inbounds ([16 x i8]* @enteringChunk, i32 0, i32 0))\n"
                  else ()
@@ -1736,7 +1870,6 @@ fun outputChunk (cxt, outputLL, chunk) =
                                        "\n"])
                     end)
 
-	val () = generateLldbMetadata()
 	val () = LldbMetadata.printDecls( print )
 	val () = LldbMetadata.printAllMetadata( print )
 

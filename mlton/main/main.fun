@@ -674,6 +674,8 @@ fun makeOptions {usage} =
 			    | "debug" => (keepGenerated := true
 					 ; keepO := true
 					 ; preferAbsPaths := true
+					(* ; profileBranch := true
+					 ; profileVal := true *)
 					 ; ProfileDebug)
                             | "label" => ProfileLabel
                             | "time" => (profileTimeSet := true
