@@ -278,7 +278,7 @@ structure LldbMetadata =
 	    in
 		createCompileUnit(Ref file, Ref empty, Ref empty, Ref subprograms, Ref empty, Ref empty)
 	    end
-(*vedant TODO *)
+
 	fun composeCompileUnit() =
 	    let
 		val empty = case peekMetadata("Empty") of 
@@ -1524,6 +1524,7 @@ fun outputStatement (cxt: Context, stmt: Statement.t): string =
 										    "\n" 
 										  ]
 									  end)
+(* Uncomment to use array instead of duplicate variables *)
 (*		    val dbgInstr = Vector.foldi ( sourceInfos', "", fn (i, si, instr) =>
 								      case SourceInfo.pos si of
 									  NONE => ""
